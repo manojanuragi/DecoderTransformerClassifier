@@ -1,0 +1,103 @@
+services:
+
+  api:
+
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+
+    environment:
+      API_PORT: 8000
+      INFERENCE_URL: http://inference:8001
+      TRAINER_URL: http://trainer:8002
+      MAX_TEXT_CHARS: 10000
+
+    ports:
+      - "8000:8000"
+
+    depends_on:
+      inference:
+        condition: service_healthy
+
+      trainer:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+
+  inference:
+
+    build:
+      context: .
+      dockerfile: services/inference/Dockerfile
+
+    environment:
+
+      INFERENCE_PORT: 8001
+
+      ARTIFACT_DIR: /app/artifacts
+
+      MODEL_VERSION: latest
+
+    volumes:
+
+      - ./artifacts:/app/artifacts
+
+    ports:
+
+      - "8001:8001"
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    restart: unless-stopped
+
+
+  trainer:
+
+    build:
+      context: .
+
+      dockerfile:
+        services/trainer/Dockerfile
+
+    environment:
+
+      TRAINER_PORT: 8002
+
+      ARTIFACT_DIR: /app/artifacts
+
+      TOKENIZER_VOCAB_SIZE: 16000
+
+      MAX_LEN: 128
+
+      D_MODEL: 256
+
+      N_HEADS: 8
+
+      N_LAYERS: 6
+
+      D_FF: 1024
+
+      DROPOUT: 0.1
+
+    volumes:
+
+      - ./artifacts:/app/artifacts
+
+    ports:
+
+      - "8002:8002"
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    restart: unless-stopped
