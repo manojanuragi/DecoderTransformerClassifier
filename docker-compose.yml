@@ -6,12 +6,15 @@ services:
       context: .
       dockerfile: services/api/Dockerfile
 
+    env_file:
+      - .env
+
     environment:
       API_PORT: 8000
       INFERENCE_URL: http://inference:8001
       TRAINER_URL: http://trainer:8002
       MAX_TEXT_CHARS: 10000
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
 
     ports:
       - "8000:8000"
@@ -32,6 +35,9 @@ services:
       context: .
       dockerfile: services/inference/Dockerfile
 
+    env_file:
+      - .env
+
     environment:
 
       INFERENCE_PORT: 8001
@@ -39,7 +45,7 @@ services:
       ARTIFACT_DIR: /app/artifacts
 
       MODEL_VERSION: latest
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
 
       METRICS_MIN_AVG_CONFIDENCE: 0.55
       METRICS_MAX_LOW_CONFIDENCE_RATE: 0.40
@@ -118,9 +124,12 @@ services:
       context: .
       dockerfile: Dockerfile.gradio
 
+    env_file:
+      - .env
+
     environment:
       API_URL: http://api:8000
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       ARTIFACT_DIR: /app/artifacts
       AUTO_RETRAIN: ${AUTO_RETRAIN:-false}
 

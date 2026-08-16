@@ -75,9 +75,9 @@ Start everything:
 
 Open the Gradio UI at http://localhost:7860
 
-Default admin password is changeme unless you set ADMIN_PASSWORD:
+Create a local .env file from .env.example and set ADMIN_PASSWORD before starting admin features:
 
-  ADMIN_PASSWORD=your-secret docker compose up --build -d
+  cp .env.example .env
 
 Sanity check:
 
@@ -106,7 +106,7 @@ Gradio UI
 
 Classify tab: paste a headline, get a label and class probabilities.
 
-Admin tab: unlock with ADMIN_PASSWORD, then you can:
+Admin tab: unlock with the admin password configured in your environment, then you can:
 
   start or monitor training
   reload the model from artifacts
@@ -116,7 +116,9 @@ Admin tab: unlock with ADMIN_PASSWORD, then you can:
 Run Gradio locally without Docker (standalone mode, no microservices):
 
   pip install -r requirements.txt
-  ADMIN_PASSWORD=your-secret python app.py
+  python app.py
+
+Set ADMIN_PASSWORD in the environment before using the Admin tab.
 
 
 API
@@ -126,8 +128,10 @@ POST /v1/predict                classify input text
 POST /v1/train                  start a training job
 GET  /v1/train/status           poll training progress
 POST /v1/model/reload           hot-reload artifacts into inference
-GET  /v1/metrics                monitoring summary (admin only, x-admin-password header)
+GET  /v1/metrics                monitoring summary (admin only)
 PUT  /v1/metrics/thresholds     update retrain thresholds (admin only)
+
+Admin endpoints require the x-admin-password request header matching the configured ADMIN_PASSWORD.
 
 
 Monitoring and retrain thresholds
@@ -144,7 +148,7 @@ Default retrain rules once at least 50 predictions are in the window:
 
 Environment variables:
 
-  ADMIN_PASSWORD=changeme
+  ADMIN_PASSWORD                required for admin UI and protected API routes
   METRICS_MIN_AVG_CONFIDENCE=0.55
   METRICS_MAX_LOW_CONFIDENCE_RATE=0.40
   METRICS_LOW_CONFIDENCE_CUTOFF=0.45
@@ -156,13 +160,13 @@ Environment variables:
 Check metrics as admin:
 
   curl http://localhost:8000/v1/metrics \
-    -H "x-admin-password: your-secret"
+    -H "x-admin-password: <admin-password>"
 
 Update thresholds as admin:
 
   curl -X PUT http://localhost:8000/v1/metrics/thresholds \
     -H "Content-Type: application/json" \
-    -H "x-admin-password: your-secret" \
+    -H "x-admin-password: <admin-password>" \
     -d '{"min_avg_confidence":0.55,"max_low_confidence_rate":0.40,"low_confidence_cutoff":0.45,"min_samples":50,"window_size":500,"auto_retrain":false}'
 
 
@@ -172,7 +176,7 @@ This repo includes app.py and requirements.txt at the project root for a Gradio 
 
 1. Go to https://huggingface.co/new-space
 2. Pick Gradio as the SDK and connect this repository
-3. Open Space Settings -> Repository secrets and add ADMIN_PASSWORD
+3. Open Space Settings -> Repository secrets and add ADMIN_PASSWORD as a secret (do not commit it to the repo)
 4. Copy the YAML header from README_SPACE.md into the Space README if prompted
 
 On Spaces the app runs in standalone mode: it loads and trains the model directly without the Docker microservices. Start with 1 epoch on the Admin tab because free CPU hardware is slow. Keep AUTO_RETRAIN off on Spaces unless you accept long training runs.

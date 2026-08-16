@@ -75,10 +75,12 @@ model = None
 tokenizer = None
 metadata = None
 monitor = MetricsMonitor(ARTIFACT_DIR)
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "changeme")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 
 def _admin_ok(request: Request):
+    if not ADMIN_PASSWORD:
+        return False
     return request.headers.get("x-admin-password", "") == ADMIN_PASSWORD
 
 # type confirmation

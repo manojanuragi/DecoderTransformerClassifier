@@ -91,7 +91,9 @@ class ThresholdsRequest(BaseModel):
 
 
 def _admin_ok(request: Request):
-    expected = os.getenv("ADMIN_PASSWORD", "changeme")
+    expected = os.getenv("ADMIN_PASSWORD", "")
+    if not expected:
+        return False
     provided = request.headers.get("x-admin-password", "")
     return provided == expected
 

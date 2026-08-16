@@ -12,4 +12,4 @@ license: mit
 
 Check the repository README for theory and architecture notes.
 
-Set `ADMIN_PASSWORD` in Space secrets before using the Admin tab.
+Add ADMIN_PASSWORD in Space secrets before using the Admin tab. Do not put the password in the README or source code.

@@ -27,7 +27,7 @@ from shared.predict import Predictor
 from shared.monitoring import MetricsMonitor, MonitoringThresholds
 
 API_URL = os.getenv("API_URL", "").rstrip("/")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "changeme")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 ARTIFACT_DIR = os.getenv("ARTIFACT_DIR", "artifacts")
 
 predictor = Predictor(ARTIFACT_DIR)
@@ -225,6 +225,11 @@ def classify_text(text):
 
 
 def verify_admin(password):
+    if not ADMIN_PASSWORD:
+        return (
+            gr.update(visible=False),
+            "Admin access is not configured. Set ADMIN_PASSWORD in the environment.",
+        )
     if password == ADMIN_PASSWORD:
         return (
             gr.update(visible=True),
