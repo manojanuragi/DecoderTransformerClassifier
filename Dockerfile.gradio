@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --default-timeout=1000 -r requirements.txt
+
+COPY shared/ shared/
+COPY services/trainer/ services/trainer/
+COPY app.py app.py
+
+ENV ARTIFACT_DIR=/app/artifacts
+ENV GRADIO_SERVER_PORT=7860
+
+RUN mkdir -p /app/artifacts
+
+EXPOSE 7860
+
+CMD ["python", "app.py"]

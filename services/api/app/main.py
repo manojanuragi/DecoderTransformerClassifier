@@ -80,6 +80,22 @@ class TrainRequest(BaseModel):
     )
 
 
+class ThresholdsRequest(BaseModel):
+
+    min_avg_confidence: float = Field(default=0.55, ge=0.0, le=1.0)
+    max_low_confidence_rate: float = Field(default=0.40, ge=0.0, le=1.0)
+    low_confidence_cutoff: float = Field(default=0.45, ge=0.0, le=1.0)
+    min_samples: int = Field(default=50, ge=1, le=100000)
+    window_size: int = Field(default=500, ge=10, le=100000)
+    auto_retrain: bool = False
+
+
+def _admin_ok(request: Request):
+    expected = os.getenv("ADMIN_PASSWORD", "changeme")
+    provided = request.headers.get("x-admin-password", "")
+    return provided == expected
+
+
 @app.middleware("http")
 async def request_id(
     request: Request,
@@ -245,4 +261,58 @@ async def reload_model():
 
     return response.json()
 
- 
+
+@app.get("/v1/metrics")
+async def metrics_summary(http_request: Request):
+
+    if not _admin_ok(http_request):
+        raise HTTPException(status_code=401, detail="admin password required")
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.get(
+            f"{INFERENCE_URL}/v1/metrics",
+            headers={
+                "x-admin-password": http_request.headers.get(
+                    "x-admin-password",
+                    "",
+                )
+            },
+        )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=response.text,
+        )
+
+    return response.json()
+
+
+@app.put("/v1/metrics/thresholds")
+async def update_thresholds(
+    request: ThresholdsRequest,
+    http_request: Request,
+):
+
+    if not _admin_ok(http_request):
+        raise HTTPException(status_code=401, detail="admin password required")
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.put(
+            f"{INFERENCE_URL}/v1/metrics/thresholds",
+            json=request.model_dump(),
+            headers={
+                "x-admin-password": http_request.headers.get(
+                    "x-admin-password",
+                    "",
+                )
+            },
+        )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=response.text,
+        )
+
+    return response.json()

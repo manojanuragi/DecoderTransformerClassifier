@@ -1,6 +1,6 @@
 # Decoder Transformer Classifier
 
-This project trains a decoder-only Transformer to classify news headlines into one of four AG News categories: World, Sports, Business, and Sci/Tech. The model sits behind a small three-service API where you can train it, reload checkpoints, and run predictions over HTTP.
+This project trains a decoder-only Transformer to classify news headlines into one of four AG News categories: World, Sports, Business, and Sci/Tech. You can use it through a Gradio web UI, a REST API, or deploy it as a Hugging Face Space.
 
 If you have seen BERT-style encoders before, the difference here is mostly architectural. We use a causal decoder-only stack (the same family of design as GPT) and adapt it for classification rather than next-token prediction.
 
@@ -22,11 +22,47 @@ Default model size: max_len 128, d_model 256, n_heads 8, n_layers 6, d_ff 1024, 
 Training uses cross-entropy loss on the AG News labels. Optimization is AdamW with weight decay and gradient clipping. Checkpoints are saved when validation macro-F1 improves on the test split, so we keep the best generalizing weights rather than whatever the last epoch produced.
 
 
+Evaluation report
+
+The figures below come from the latest completed training job on CPU: 1 epoch, batch size 64, learning rate 0.0003. Evaluation is the official AG News test split (7,600 headlines). The same accuracy and macro-F1 are written to artifacts/metadata.json and used as the monitoring baseline.
+
+Setup:
+
+  dataset     AG News (120,000 train / 7,600 test)
+  tokenizer   BPE, vocab_size 16000
+  model       max_len 128, d_model 256, n_heads 8, n_layers 6, d_ff 1024, dropout 0.1
+  optimizer   AdamW, lr 0.0003, batch_size 64, gradient clip 1.0
+  device      cpu
+  epochs      1
+
+Test set:
+
+  train loss  0.3192
+  accuracy    0.9228
+  macro-F1    0.9228
+
+Sample prediction after POST /v1/model/reload:
+
+  input: "Stock markets rally on strong earnings report"
+  label: Business (confidence 0.987)
+
+Re-running training with more epochs will overwrite these numbers. Poll GET /v1/train/status or open artifacts/metadata.json for the current checkpoint.
+
+
 System design
 
 Training and inference have different needs. Training pulls the Hugging Face dataset, builds a tokenizer, and runs for a long time. Inference only loads weights and scores a single string. Splitting them keeps the serving path light.
 
-The api service on port 8000 is the single entry point. POST /v1/predict goes to inference on 8001. POST /v1/train goes to trainer on 8002, which runs training in a background thread and writes artifacts to disk. After training finishes, call POST /v1/model/reload so inference picks up the new weights without a full restart.
+Services when running with Docker Compose:
+
+  gradio      7860   browser UI (Classify tab public, Admin tab password-protected)
+  api         8000   REST gateway
+  inference   8001   model loading and prediction
+  trainer     8002   background training jobs
+
+The api service is the single entry point for curl and programmatic clients. POST /v1/predict goes to inference. POST /v1/train goes to trainer, which writes artifacts to disk. After training finishes, call POST /v1/model/reload so inference picks up the new weights without a full restart.
+
+The Gradio app on port 7860 talks to the api service in Docker mode. The Classify tab is public. The Admin tab requires ADMIN_PASSWORD and can start training, reload the model, view monitoring metrics, and edit retrain thresholds.
 
 
 Getting started
@@ -37,17 +73,23 @@ Start everything:
 
   docker compose up --build -d
 
+Open the Gradio UI at http://localhost:7860
+
+Default admin password is changeme unless you set ADMIN_PASSWORD:
+
+  ADMIN_PASSWORD=your-secret docker compose up --build -d
+
 Sanity check:
 
   curl http://localhost:8000/health
-  curl http://localhost:8001/health
-  curl http://localhost:8000/v1/train/status
+  curl http://localhost:8001/ready
+  curl http://localhost:7860
 
 Train (runs in the background; poll status until status is completed):
 
   curl -X POST http://localhost:8000/v1/train \
     -H "Content-Type: application/json" \
-    -d '{"epochs": 3, "batch_size": 64, "lr": 0.0003}'
+    -d '{"epochs": 1, "batch_size": 64, "lr": 0.0003}'
 
 Training writes tokenizer.json, model.pt, and metadata.json into artifacts/. On CPU this can take a while; use epochs 1 first if you just want to verify the pipeline.
 
@@ -60,18 +102,96 @@ Predict:
     -d '{"text": "Stock markets rally on strong earnings report"}'
 
 
+Gradio UI
+
+Classify tab: paste a headline, get a label and class probabilities.
+
+Admin tab: unlock with ADMIN_PASSWORD, then you can:
+
+  start or monitor training
+  reload the model from artifacts
+  refresh monitoring metrics (admin only)
+  set retrain thresholds and optional auto-retrain
+
+Run Gradio locally without Docker (standalone mode, no microservices):
+
+  pip install -r requirements.txt
+  ADMIN_PASSWORD=your-secret python app.py
+
+
 API
 
-GET  /health              liveness check
-POST /v1/predict          classify input text
-POST /v1/train            start a training job
-GET  /v1/train/status     poll training progress
-POST /v1/model/reload     hot-reload artifacts into inference
+GET  /health                    liveness check
+POST /v1/predict                classify input text
+POST /v1/train                  start a training job
+GET  /v1/train/status           poll training progress
+POST /v1/model/reload           hot-reload artifacts into inference
+GET  /v1/metrics                monitoring summary (admin only, x-admin-password header)
+PUT  /v1/metrics/thresholds     update retrain thresholds (admin only)
+
+
+Monitoring and retrain thresholds
+
+Every prediction is logged to artifacts/prediction_log.jsonl. The service keeps a rolling window and computes average confidence, low-confidence rate, and recent label counts. Thresholds live in artifacts/monitoring_config.json and can also be seeded from environment variables.
+
+Metrics are admin-only. Public users can classify text but cannot read monitoring data.
+
+Default retrain rules once at least 50 predictions are in the window:
+
+  retrain if average confidence drops below 0.55
+  retrain if more than 40% of predictions are below 0.45 confidence
+  retrain if confidence looks too weak compared with the saved training macro-F1 baseline
+
+Environment variables:
+
+  ADMIN_PASSWORD=changeme
+  METRICS_MIN_AVG_CONFIDENCE=0.55
+  METRICS_MAX_LOW_CONFIDENCE_RATE=0.40
+  METRICS_LOW_CONFIDENCE_CUTOFF=0.45
+  METRICS_MIN_SAMPLES=50
+  METRICS_WINDOW=500
+  METRICS_F1_DROP=0.05
+  AUTO_RETRAIN=false
+
+Check metrics as admin:
+
+  curl http://localhost:8000/v1/metrics \
+    -H "x-admin-password: your-secret"
+
+Update thresholds as admin:
+
+  curl -X PUT http://localhost:8000/v1/metrics/thresholds \
+    -H "Content-Type: application/json" \
+    -H "x-admin-password: your-secret" \
+    -d '{"min_avg_confidence":0.55,"max_low_confidence_rate":0.40,"low_confidence_cutoff":0.45,"min_samples":50,"window_size":500,"auto_retrain":false}'
+
+
+Deploy on Hugging Face Spaces
+
+This repo includes app.py and requirements.txt at the project root for a Gradio Space.
+
+1. Go to https://huggingface.co/new-space
+2. Pick Gradio as the SDK and connect this repository
+3. Open Space Settings -> Repository secrets and add ADMIN_PASSWORD
+4. Copy the YAML header from README_SPACE.md into the Space README if prompted
+
+On Spaces the app runs in standalone mode: it loads and trains the model directly without the Docker microservices. Start with 1 epoch on the Admin tab because free CPU hardware is slow. Keep AUTO_RETRAIN off on Spaces unless you accept long training runs.
 
 
 Project layout
 
-shared/model.py and shared/schema.py hold the model and config. services/api is the gateway, services/inference serves predictions, services/trainer runs training via train.py. artifacts/ stores model outputs (gitignored except .gitkeep). tests/ has shape and forward-pass checks.
+  shared/model.py          DecoderTransformerClassifier
+  shared/schema.py         label map and ModelConfig
+  shared/predict.py        load artifacts and run inference
+  shared/monitoring.py     prediction logging, metrics, retrain checks
+  app.py                   Gradio frontend
+  requirements.txt         dependencies for Gradio / Hugging Face Spaces
+  Dockerfile.gradio        Gradio container for docker compose
+  services/api             FastAPI gateway
+  services/inference       prediction service
+  services/trainer         training service and train.py
+  artifacts/               model outputs (gitignored except .gitkeep)
+  tests/                   unit tests
 
 Run tests without Docker:
 

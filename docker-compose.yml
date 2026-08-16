@@ -11,6 +11,7 @@ services:
       INFERENCE_URL: http://inference:8001
       TRAINER_URL: http://trainer:8002
       MAX_TEXT_CHARS: 10000
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
 
     ports:
       - "8000:8000"
@@ -38,6 +39,14 @@ services:
       ARTIFACT_DIR: /app/artifacts
 
       MODEL_VERSION: latest
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+
+      METRICS_MIN_AVG_CONFIDENCE: 0.55
+      METRICS_MAX_LOW_CONFIDENCE_RATE: 0.40
+      METRICS_LOW_CONFIDENCE_CUTOFF: 0.45
+      METRICS_MIN_SAMPLES: 50
+      METRICS_WINDOW: 500
+      AUTO_RETRAIN: "false"
 
     volumes:
 
@@ -99,5 +108,30 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+    restart: unless-stopped
+
+
+  gradio:
+
+    build:
+      context: .
+      dockerfile: Dockerfile.gradio
+
+    environment:
+      API_URL: http://api:8000
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      ARTIFACT_DIR: /app/artifacts
+      AUTO_RETRAIN: ${AUTO_RETRAIN:-false}
+
+    ports:
+      - "7860:7860"
+
+    volumes:
+      - ./artifacts:/app/artifacts
+
+    depends_on:
+      api:
+        condition: service_started
 
     restart: unless-stopped

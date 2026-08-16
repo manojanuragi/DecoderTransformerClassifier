@@ -26,10 +26,10 @@ from sklearn.metrics import (
 
 import sys
 
-sys.path.insert(
-    0,
-    "/app"
-)
+ROOT = Path(__file__).resolve().parents[3]
+for path in (ROOT, Path("/app")):
+    if path.exists() and str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 from shared.model import (
     DecoderTransformerClassifier
